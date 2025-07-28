@@ -335,74 +335,71 @@ U64 rook_magic_numbers[64] = {
     0x2006104900a0804ULL,
     0x1004081002402ULL};
 
-U64 bishop_magic_numbers[64] =
-    {
-        0x8112202042201c44ULL,
-        0x20004501401020ULL,
-        0x1000629210024010ULL,
-        0xc480420850045484ULL,
-        0x6210100021000ULL,
-        0x201002942c00840ULL,
-        0x10090008a20000ULL,
-        0xa010400844008208ULL,
-        0x80288402448ULL,
-        0x454281020912ULL,
-        0x4ac0082049010812ULL,
-        0xe802906100004ULL,
-        0x8048020020060ULL,
-        0x801220050044044ULL,
-        0x44802003100ULL,
-        0x460100820002600aULL,
-        0x82000420025200ULL,
-        0x950000200800488ULL,
-        0x8024000800898808ULL,
-        0x8042104000800ULL,
-        0x201000484401000ULL,
-        0x500880241488ULL,
-        0x441018a00840c0ULL,
-        0x82040080440141ULL,
-        0x460030002202ULL,
-        0x8020039480800ULL,
-        0x400818008010ULL,
-        0x840026002088ULL,
-        0x8800800802000ULL,
-        0x10023000180010ULL,
-        0x1048090890044032ULL,
-        0x140020800940500ULL,
-        0x4008005012c0ULL,
-        0x241002201410400ULL,
-        0x1988102044004ULL,
-        0x40410080020ULL,
-        0x20040400082820ULL,
-        0x244a10060001000ULL,
-        0x4021010060220900ULL,
-        0x200002840410a208ULL,
-        0x2002100118040141ULL,
-        0x121128c110400046ULL,
-        0x100e2228002001a8ULL,
-        0x11004988000210ULL,
-        0x8000c80100980040ULL,
-        0x444448040821ULL,
-        0x208a1a4400a040ULL,
-        0x4c0840400a802ULL,
-        0x138c49004010908ULL,
-        0x118022110080800ULL,
-        0x180804111901ULL,
-        0x10a0400300820640ULL,
-        0x2050000889001006ULL,
-        0x4102021201082200ULL,
-        0x4040440251500ULL,
-        0x2304220082020a01ULL,
-        0x8000600205158044ULL,
-        0x4007002802280ULL,
-        0x4088122860440188ULL,
-        0x14021aULL,
-        0x48013814400a0098ULL,
-        0x483000600ULL,
-        0x14021810002882ULL,
-        0x408241012a701ULL
-
-};
+U64 bishop_magic_numbers[64] = {
+    0x40040844404084ULL,
+    0x2004208a004208ULL,
+    0x10190041080202ULL,
+    0x108060845042010ULL,
+    0x581104180800210ULL,
+    0x2112080446200010ULL,
+    0x1080820820060210ULL,
+    0x3c0808410220200ULL,
+    0x4050404440404ULL,
+    0x21001420088ULL,
+    0x24d0080801082102ULL,
+    0x1020a0a020400ULL,
+    0x40308200402ULL,
+    0x4011002100800ULL,
+    0x401484104104005ULL,
+    0x801010402020200ULL,
+    0x400210c3880100ULL,
+    0x404022024108200ULL,
+    0x810018200204102ULL,
+    0x4002801a02003ULL,
+    0x85040820080400ULL,
+    0x810102c808880400ULL,
+    0xe900410884800ULL,
+    0x8002020480840102ULL,
+    0x220200865090201ULL,
+    0x2010100a02021202ULL,
+    0x152048408022401ULL,
+    0x20080002081110ULL,
+    0x4001001021004000ULL,
+    0x800040400a011002ULL,
+    0xe4004081011002ULL,
+    0x1c004001012080ULL,
+    0x8004200962a00220ULL,
+    0x8422100208500202ULL,
+    0x2000402200300c08ULL,
+    0x8646020080080080ULL,
+    0x80020a0200100808ULL,
+    0x2010004880111000ULL,
+    0x623000a080011400ULL,
+    0x42008c0340209202ULL,
+    0x209188240001000ULL,
+    0x400408a884001800ULL,
+    0x110400a6080400ULL,
+    0x1840060a44020800ULL,
+    0x90080104000041ULL,
+    0x201011000808101ULL,
+    0x1a2208080504f080ULL,
+    0x8012020600211212ULL,
+    0x500861011240000ULL,
+    0x180806108200800ULL,
+    0x4000020e01040044ULL,
+    0x300000261044000aULL,
+    0x802241102020002ULL,
+    0x20906061210001ULL,
+    0x5a84841004010310ULL,
+    0x4010801011c04ULL,
+    0xa010109502200ULL,
+    0x4a02012000ULL,
+    0x500201010098b028ULL,
+    0x8040002811040900ULL,
+    0x28000010020204ULL,
+    0x6000020202d0240ULL,
+    0x8918844842082200ULL,
+    0x4010011029020020ULL};
 
 U64 bishop_masks[64];
 
@@ -707,7 +704,7 @@ U64 maskBishopAttacksInstant(int square, U64 blockers) // this variant will gene
     int tf = square % 8;
 
     // mask attacked bits, STOP when bishop encounters a piece as it can't attack through it!!!
-    //diagonal which goes up and to the right
+    // diagonal which goes up and to the right
     for (r = tr + 1, f = tf + 1; r <= 7 && f <= 7; r++, f++)
     {
         attacks |= (1ULL << (r * 8 + f));
@@ -716,7 +713,7 @@ U64 maskBishopAttacksInstant(int square, U64 blockers) // this variant will gene
             break;
         }
     }
-    //diagonal which goes down and to the left
+    // diagonal which goes down and to the left
     for (r = tr - 1, f = tf - 1; r >= 0 && f >= 0; r--, f--)
     {
         attacks |= (1ULL << (r * 8 + f));
@@ -725,7 +722,7 @@ U64 maskBishopAttacksInstant(int square, U64 blockers) // this variant will gene
             break;
         }
     }
-    //diagonal which goes down and to the right
+    // diagonal which goes down and to the right
     for (r = tr - 1, f = tf + 1; r >= 0 && f <= 7; r--, f++)
     {
         attacks |= (1ULL << (r * 8 + f));
@@ -734,7 +731,7 @@ U64 maskBishopAttacksInstant(int square, U64 blockers) // this variant will gene
             break;
         }
     }
-    //diagonal which goes up and to the left
+    // diagonal which goes up and to the left
     for (r = tr + 1, f = tf - 1; r <= 7 && f >= 0; r++, f--)
     {
         attacks |= (1ULL << (r * 8 + f));
@@ -1169,6 +1166,53 @@ void printBoard()
     printf("      half moves : %d\n", half_moves);
     printf("      full moves: %d\n", full_moves);
 }
+static inline int isSquareAttacked(int square, int side)
+{
+    // white pieces
+    if (side == white)
+    {
+        // check if white pawn attacks the square
+        if (pawn_attacks[black][square] & piece_bitboards[P])
+            return 1;
+        // check if white knight attacks the square
+        if (knight_attacks[square] & piece_bitboards[P])
+            return 1;
+    }
+    else
+    {
+    }
+    return 0;
+}
+void printAttackedSquares(int side) // helpful debugging function to print a given bitboard!
+{
+    // print files
+    printf("    ");
+    for (int i = 97; i < 105; i++) // using ascii codes!!
+    {
+        printf(" %c ", i);
+    }
+    printf("\n");
+    // loop over ranks 1-8
+    for (int rank = 0; rank < 8; rank++)
+    {
+        // loop over files a-h
+        for (int file = 0; file < 8; file++)
+        {
+            // convert rank and file to square index ranging from 0-63
+            int square = rank * 8 + file;
+            // print ranks
+
+            if (file == 0)
+            {
+                printf("  %d ", 8 - rank);
+            }
+            // show bit state
+            printf(" %d ", isSquareAttacked(e5, white)); // notice the spaces around %d!
+        }
+        // print newline after each rank
+        printf("\n");
+    }
+}
 /******************\
 --------------------
     Initialization
@@ -1288,10 +1332,8 @@ void initEverything()
 int main() // entry point
 {
     initEverything();
-    U64 occupancy = 0ULL;
-    setBit(occupancy, e4);
-
-    U64 bishop_atk = genBishopAttacks(0ULL, d5);
-    printBitboard(bishop_attacks[d5][0]);
-
+    setBit(piece_bitboards[N], e4);
+    printBitboard(piece_bitboards[N]);
+    printBitboard(knight_attacks[e4]);
+    printAttackedSquares(white);
 }
