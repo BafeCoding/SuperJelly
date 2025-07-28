@@ -6,16 +6,31 @@
 --------------------
 \******************/
 #include <stdio.h>
-#include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 /******************\
 --------------------
    DEFINITIONS
 --------------------
 \******************/
+/*
+we will define our essential "U64" type which stands for "unsigned 64(bits)" and
+is the type we utilize to represent our bitboards.
+*/
 
-#define U64 uint64_t
+#define U64 unsigned long long
+/*
+we will define some essential FEN strings to initialize our board with
+*/
+// the starting position of chess.
 #define starting_postition_fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
+#define empty_board_fen "8/8/8/8/8/8/8/8 w - - 0 1"
+// The rest are random positions I obtained from Lichess puzzles.
+#define FEN_test_1 "4r3/p7/4p1pp/2Rp4/k7/1R4P1/P4P1P/6K1 b - - 0 37"                    // losing for black
+#define FEN_test_2 "5Q2/8/4K3/6r1/8/4k3/8/8 b - - 0 67"                                 // losing for black
+#define FEN_test_3 "r3kb1r/1q3ppp/pp2p3/2p1R3/2Pp4/1P1P2P1/PB1N1P1P/R2Q2K1 b kq - 0 17" // losing for black
+// extremely bad for black, black should resign if they see this position
+#define FEN_test_4 "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1"
 
 /******************\
 --------------------
@@ -92,6 +107,16 @@ enum board_squares
     no_sq
 };
 
+int files_to_int[] = {
+    ['a'] = 0,
+    ['b'] = 1,
+    ['c'] = 2,
+    ['d'] = 3,
+    ['e'] = 4,
+    ['f'] = 5,
+    ['g'] = 6,
+    ['h'] = 7};
+
 /*
 ENUM for castling rights.
 logic goes like this :
@@ -103,11 +128,25 @@ black king can castle kingside   = 0100     4
 white king can castle queenside = 1000     8
 
 
-castling rights for both can be obtained by using bitwise or to combine these bits.
+castling rights for both can be obtained by using bitwise logic.
 for example, 1001 would mean the white king can castle kingside and the black king can castle queenside.
 
 */
+enum castling_rights
+{
+    wk = 1,
+    wq = 2,
+    bk = 4,
+    bq = 8
+};
 
+/*
+array for reading castling rights from FEN position.*/
+int castle_rights_encoder[] = {
+    ['Q'] = wq,
+    ['K'] = wk,
+    ['q'] = bq,
+    ['k'] = bk};
 /*
 Piece encoding enumeration. The uppercase letters are designated for the white pieces, and the lowercase letters for the black ones.
 Notice the pieces are in ascending order of value as knights are worth slightly less than bishops.
@@ -130,14 +169,6 @@ enum pieces
     k,
 };
 
-enum castling_rights
-{
-    wk = 1,
-    wq = 2,
-    bk = 4,
-    bq = 8
-};
-
 /*
 An array providing ascii representation of every piece.
 It's important to keep this in the same order as our piece encoding enumeration so we can reference it
@@ -146,7 +177,7 @@ for example unicode_pieces[P] would return P, which is ideal and convienient
 */
 char ascii_pieces[12] = "PNBRQKpnbrqk";
 
-int char_pieces_to_encoded_constant[] = {
+int pieces_to_encoded_constant[] = {
     ['P'] = P,
     ['N'] = N,
     ['B'] = B,
@@ -237,7 +268,7 @@ const char *square_to_coords[] = {
     "f1",
     "g1",
     "h1",
-};
+    "no_sq"};
 U64 rook_magic_numbers[64] = {
     0x8a80104000800020ULL,
     0x140002000100040ULL,
@@ -676,6 +707,7 @@ U64 maskBishopAttacksInstant(int square, U64 blockers) // this variant will gene
     int tf = square % 8;
 
     // mask attacked bits, STOP when bishop encounters a piece as it can't attack through it!!!
+    //diagonal which goes up and to the right
     for (r = tr + 1, f = tf + 1; r <= 7 && f <= 7; r++, f++)
     {
         attacks |= (1ULL << (r * 8 + f));
@@ -684,6 +716,7 @@ U64 maskBishopAttacksInstant(int square, U64 blockers) // this variant will gene
             break;
         }
     }
+    //diagonal which goes down and to the left
     for (r = tr - 1, f = tf - 1; r >= 0 && f >= 0; r--, f--)
     {
         attacks |= (1ULL << (r * 8 + f));
@@ -692,6 +725,7 @@ U64 maskBishopAttacksInstant(int square, U64 blockers) // this variant will gene
             break;
         }
     }
+    //diagonal which goes down and to the right
     for (r = tr - 1, f = tf + 1; r >= 0 && f <= 7; r--, f++)
     {
         attacks |= (1ULL << (r * 8 + f));
@@ -700,6 +734,7 @@ U64 maskBishopAttacksInstant(int square, U64 blockers) // this variant will gene
             break;
         }
     }
+    //diagonal which goes up and to the left
     for (r = tr + 1, f = tf - 1; r <= 7 && f >= 0; r++, f--)
     {
         attacks |= (1ULL << (r * 8 + f));
@@ -870,7 +905,7 @@ void initLeaperAttacks()
     {
         // fill pawn attacks array
         pawn_attacks[white][square] = maskPawnAttacks(white, square);
-        pawn_attacks[black][square] = maskPawnAttacks(white, square);
+        pawn_attacks[black][square] = maskPawnAttacks(black, square);
         // fill knight attacks array
         knight_attacks[square] = maskKnightAttacks(square);
         // fill king attacks array
@@ -1057,11 +1092,11 @@ void initSliderAttacks(int bishop)
     }
 }
 
-static inline U64 genBishopAttack(U64 occupancy, int square)
+static inline U64 genBishopAttacks(U64 occupancy, int square)
 {
     occupancy &= bishop_masks[square];
     occupancy *= bishop_magic_numbers[square];
-    occupancy >>= 64 - 9;
+    occupancy >>= 64 - bishop_relevant_bits[square];
     return bishop_attacks[square][occupancy];
 }
 static inline U64 genRookAttacks(U64 occupancy, int square)
@@ -1070,6 +1105,11 @@ static inline U64 genRookAttacks(U64 occupancy, int square)
     occupancy *= rook_magic_numbers[square];
     occupancy >>= 64 - rook_relevant_bits[square];
     return rook_attacks[square][occupancy];
+}
+
+static inline U64 genQueenAttacks(U64 occupancy, int square)
+{
+    return (genRookAttacks(occupancy, square)) | (genBishopAttacks(occupancy, square));
 }
 /******************\
 --------------------
@@ -1085,7 +1125,11 @@ int side = 0;
 
 int en_passant = no_sq;
 
-int castle = 0b1101;
+int castle = 0;
+
+int half_moves = 0;
+
+int full_moves = 0;
 
 void printBoard()
 {
@@ -1110,23 +1154,118 @@ void printBoard()
         printf("\n");
     }
     // print files
-    printf("    ");
+    printf("     ");
     for (int i = 97; i < 105; i++) // using ascii codes!!
     {
         printf(" %c ", i);
     }
-    printf("\n %s to play\n", (side) ? "black" : "white");
-    printf("\n en passant: %s\n", (en_passant != no_sq) ? square_to_coords[en_passant] : "none");
-    printf("castling rights : %c%c%c%c\n", (castle & wk) ? 'K' : '-',
+
+    printf("\n      %s to play\n", (!side) ? "white" : "black");
+    printf("\n      en passant: %s\n", (en_passant != no_sq) ? square_to_coords[en_passant] : "none");
+    printf("      castling rights : %c%c%c%c\n", (castle & wk) ? 'K' : '-',
            (castle & wq) ? 'Q' : '-',
            (castle & bk) ? 'k' : '-',
            (castle & bq) ? 'q' : '-');
+    printf("      half moves : %d\n", half_moves);
+    printf("      full moves: %d\n", full_moves);
 }
 /******************\
 --------------------
     Initialization
 --------------------
 \******************/
+
+/*
+here, we create a function which will accept a FEN string as input and initialize the
+current position into our piece bitboard.
+*/
+void initFENPosition(char *FEN)
+{
+    // erase data from piece and occupancy bitboards
+    memset(piece_bitboards, 0ULL, sizeof(piece_bitboards));
+    memset(occupancy_bitboards, 0ULL, sizeof(occupancy_bitboards));
+    int current_index = 0;
+    int square;
+
+    for (int rank = 0; rank < 8; rank++)
+    {
+        for (int file = 0; file < 8; file++)
+        {
+            square = rank * 8 + file;
+            if (FEN[current_index] == '/')
+            {
+                current_index++;
+            }
+
+            if (FEN[current_index] >= '1' && FEN[current_index] <= '8')
+            {
+                file += FEN[current_index] - '0' - 1;
+            }
+            else
+            {
+                setBit(piece_bitboards[pieces_to_encoded_constant[FEN[current_index]]], square);
+            }
+            current_index++;
+        }
+    }
+    current_index++;
+    char rest_of_FEN[64];
+    strncpy(rest_of_FEN, &FEN[current_index], sizeof(rest_of_FEN) - 1);
+    rest_of_FEN[sizeof(rest_of_FEN) - 1] = '\0';
+
+    char side_from_FEN;
+    char castle_from_FEN[5];
+    char en_passant_str[3];
+    int half_moves_from_FEN;
+    int full_moves_from_FEN;
+
+    sscanf(rest_of_FEN, "%c %4s %2s %d %d", &side_from_FEN, castle_from_FEN,
+           en_passant_str, &half_moves_from_FEN, &full_moves_from_FEN);
+
+    /*
+    debug print statements
+    printf("side %c\n", side_from_FEN);
+    printf("castle %s\n", castle_from_FEN);
+    printf("ep %s\n", en_passant_str);
+    printf("half %d\n", half_moves_from_FEN);
+    printf("full %d\n", full_moves_from_FEN);
+    */
+
+    side = (side_from_FEN == 'w') ? white : black;
+
+    for (int index = 0; index < 4; index++)
+    {
+        char curr = castle_from_FEN[index];
+        if (curr != 'Q' && curr != 'K' && curr != 'k' && curr != 'q')
+        {
+            break;
+        }
+        castle |= castle_rights_encoder[curr];
+    }
+
+    if (strcmp(en_passant_str, "-") == 0)
+    {
+        en_passant = no_sq;
+    }
+    else
+    {
+        int file = files_to_int[en_passant_str[0]];
+        int rank = 8 - (en_passant_str[1] - '0');
+        en_passant = rank * 8 + file;
+    }
+
+    half_moves = half_moves_from_FEN;
+    full_moves = full_moves_from_FEN;
+    for (int piece = P; piece <= K; piece++)
+    {
+        occupancy_bitboards[white] |= piece_bitboards[piece];
+    }
+    for (int piece = p; piece <= k; piece++)
+    {
+        occupancy_bitboards[black] |= piece_bitboards[piece];
+    }
+    occupancy_bitboards[both] |= occupancy_bitboards[white] | occupancy_bitboards[black];
+}
 
 void initEverything()
 {
@@ -1148,14 +1287,11 @@ void initEverything()
 
 int main() // entry point
 {
-    setBit(piece_bitboards[P], a1);
-    setBit(piece_bitboards[P], b1);
-    setBit(piece_bitboards[P], c1);
-    setBit(piece_bitboards[P], d1);
-    setBit(piece_bitboards[P], e1);
-    setBit(piece_bitboards[P], f1);
-    setBit(piece_bitboards[P], g1);
-    setBit(piece_bitboards[P], h1);
+    initEverything();
+    U64 occupancy = 0ULL;
+    setBit(occupancy, e4);
 
-    printBoard();
+    U64 bishop_atk = genBishopAttacks(0ULL, d5);
+    printBitboard(bishop_attacks[d5][0]);
+
 }
