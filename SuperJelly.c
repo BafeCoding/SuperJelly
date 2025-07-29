@@ -1175,15 +1175,39 @@ static inline int isSquareAttacked(int square, int side)
         if (pawn_attacks[black][square] & piece_bitboards[P])
             return 1;
         // check if white knight attacks the square
-        if (knight_attacks[square] & piece_bitboards[P])
+        if (knight_attacks[square] & piece_bitboards[N])
+            return 1;
+        // check if white bishop attacks the square
+        if ((genBishopAttacks(occupancy_bitboards[both], square)) & (piece_bitboards[B]))
+            return 1;
+        // check if white rook attacks the square
+        if ((genRookAttacks(occupancy_bitboards[both], square)) & piece_bitboards[R])
+            return 1;
+        // check if white queen attacks the square
+        if ((genQueenAttacks(occupancy_bitboards[both], square)) & piece_bitboards[Q])
             return 1;
     }
     else
     {
+        // check if black pawn attacks the square
+        if (pawn_attacks[white][square] & piece_bitboards[p])
+            return 1;
+        // check if black knight attacks the square
+        if (knight_attacks[square] & piece_bitboards[n])
+            return 1;
+        // check if black bishop attacks the square
+        if ((genBishopAttacks(occupancy_bitboards[both], square)) & (piece_bitboards[b]))
+            return 1;
+        // check if black rook attacks the square
+        if ((genRookAttacks(occupancy_bitboards[both], square)) & piece_bitboards[r])
+            return 1;
+        // check if black queen attacks the square
+        if ((genQueenAttacks(occupancy_bitboards[both], square)) & piece_bitboards[q])
+            return 1;
     }
-    return 0;
+    return 0; // default return value
 }
-void printAttackedSquares(int side) // helpful debugging function to print a given bitboard!
+void printAttackedSquares(int side)
 {
     // print files
     printf("    ");
@@ -1207,7 +1231,7 @@ void printAttackedSquares(int side) // helpful debugging function to print a giv
                 printf("  %d ", 8 - rank);
             }
             // show bit state
-            printf(" %d ", isSquareAttacked(e5, white)); // notice the spaces around %d!
+            printf(" %d ", isSquareAttacked(square, side)); // notice the spaces around %d!
         }
         // print newline after each rank
         printf("\n");
@@ -1332,8 +1356,6 @@ void initEverything()
 int main() // entry point
 {
     initEverything();
-    setBit(piece_bitboards[N], e4);
-    printBitboard(piece_bitboards[N]);
-    printBitboard(knight_attacks[e4]);
-    printAttackedSquares(white);
+    initFENPosition(starting_postition_fen);
+    printAttackedSquares(black);
 }
