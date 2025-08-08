@@ -1,3 +1,5 @@
+
+
 #include <stdio.h>
 
 /******************\
@@ -8,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 /******************\
 --------------------
    DEFINITIONS
@@ -18,12 +21,18 @@ we will define our essential "U64" type which stands for "unsigned 64(bits)" and
 is the type we utilize to represent our bitboards.
 */
 
-#define U64 unsigned long long
+#define U64 uint64_t
+
+/*
+we will also define our essential "move" type as an unsigned 16 bit integer to store move information in.
+*/
+#define move_t uint16_t
+
 /*
 we will define some essential FEN strings to initialize our board with
 */
 // the starting position of chess.
-#define starting_postition_fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
+#define starting_postition_fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 #define empty_board_fen "8/8/8/8/8/8/8/8 w - - 0 1"
 // The rest are random positions I obtained from Lichess puzzles.
 #define FEN_test_1 "4r3/p7/4p1pp/2Rp4/k7/1R4P1/P4P1P/6K1 b - - 0 37"                    // losing for black
@@ -168,6 +177,12 @@ enum pieces
     q,
     k,
 };
+
+typedef struct
+{
+    int moves[256];
+    int total_count;
+} moves;
 
 /*
 An array providing ascii representation of every piece.
@@ -428,6 +443,17 @@ const U64 not_hg_file = 4557430888798830399ULL;
 
 // not AB file
 const U64 not_ab_file = 18229723555195321596ULL;
+
+// seventh rank (Used to check if white pawn is on seventh rank for promotion or black pawn can push 2 squares)
+const U64 seventh_rank = 65280ULL;
+
+// second rank (Used to check if black pawn can potentially push for promotion or white pawn can push 2 squares)
+const U64 second_rank = 71776119061217280ULL;
+// eighth rank (Used for white pawn promotion captures)
+const U64 eighth_rank = 255ULL;
+// first rank (Used for black pawn promotion captures)
+const U64 first_rank = 18374686479671623680ULL;
+
 // set bit of a square
 // Helpful bit macros!!
 
@@ -1237,6 +1263,200 @@ void printAttackedSquares(int side)
         printf("\n");
     }
 }
+
+/******************\
+--------------------
+   Move Generation
+--------------------
+\******************/
+
+// macros
+/*
+    To encode moves, I decided to use 16 bit move representation as it was shown to me on chessprogramming.org
+    0000 0000 00[00 0000]
+                these bits encode the source square of the move, 6 bits means 2^6 = 64 possible squares which matches perfectly
+
+
+    0000 [0000 00]00 0000
+        these bits encode the target square of the move
+
+
+    [0000] 0000 0000 0000
+    special flag bits
+     Bit 1                   Bit 2          Bit 3               Bit 4
+    Promotion               Capture     Special Bit 1         Special Bit 2
+    full details can be found on https://www.chessprogramming.org/Encoding_Moves#From-To_Based
+*/
+#define encodeMove(from, to, promo, capture, s2, s1) (from) | ((to) << 6) | ((s1) << 12) | ((s2) << 13) | ((capture) << 14) | ((promo) << 15)
+/*
+The following macros get information from a given move using bitwise logic
+
+Bitwise and to extract the only relevant bits in the given context
+
+Right shift to reduce the bits to the proper amount
+*/
+#define getSourceSq(move) (move & 0b0000000000111111)
+#define getTargetSq(move) ((move & 0b0000111111000000) >> 6)
+#define getFlags(move) ((move & 0b1111000000000000) >> 12)
+
+void addMove(move_t move, moves *move_list)
+{
+    move_list->moves[move_list->total_count] = move;
+    move_list->total_count++;
+}
+
+void makeMove(move_t)
+{
+}
+void unmakeMove()
+{
+}
+/*
+Like it has usually been done some other times within this code, I decided to create a printMove() function for debugging purposes
+*/
+
+void printMove(move_t move)
+{
+    // print source square of move
+    printf("Source square : %s\n", square_to_coords[getSourceSq(move)]);
+    // print target square of move
+    printf("Target square : %s\n", square_to_coords[getTargetSq(move)]);
+    // print whether move was capture or not
+    printf("Capture : %s\n", (getFlags(move) & 0b0100) ? "yes" : "no");
+    // print whether move was en-passant capture or not
+    printf("En-passant capture : %s\n", ((getFlags(move) & 0b0100) && (getFlags(move) & 0b0001)) ? "yes" : "no");
+    // print whether or not move is a promotion
+    printf("Promotion : %s\n", (move & 0b1000) ? "yes" : "no");
+    // print move as decimal and binary
+    printf("Move as decimal : %d\n", move);
+    printf("Move as binary :  ");
+    for (int i = 15; i >= 0; i--)
+    {
+        printf("%d", (getBit(move, i)) ? 1 : 0);
+    }
+    printf("\nString to send to UCI: %s%s\n", square_to_coords[getSourceSq(move)], square_to_coords[getTargetSq(move)]);
+}
+// created a function to print movelists for debugging aswell.
+void printMoveList(moves *move_list)
+{
+    printf("list of moves : [");
+    for (int i = 0; i < move_list->total_count; i++)
+    {
+        printf(" %s%s, ", square_to_coords[getSourceSq(move_list->moves[i])], square_to_coords[getTargetSq(move_list->moves[i])]);
+        if (i + 1 % 17 == 0) // seperate lines every 16 moves
+        {
+            printf("\n");
+        }
+    }
+    printf("]\n");
+}
+
+static inline void genMoves(moves *move_list)
+{
+    int start_square, target_square, double_pawn_push_square, attacked_square;
+    U64 bitboard, attacks;
+    for (int piece = P; piece < k; piece++)
+    {
+        bitboard = piece_bitboards[piece];
+        // generating white pawn moves and white king castling
+        if (side == white)
+        {
+
+            if (piece == P) // generate pawn moves
+            {
+                // generate quiet(non capture ) pawn moves
+                while (bitboard)
+                {
+                    start_square = get_lsb_index(bitboard);
+                    target_square = start_square - 8;
+                    double_pawn_push_square = start_square - 16;
+                    if ((1ULL << start_square) & seventh_rank && !((1ULL << target_square) & occupancy_bitboards[both])) // white pawn is on rank 7 and can therefore promote
+                    {
+
+                        move_t knight_promo = encodeMove(start_square, target_square, 1, 0, 0, 0);
+                        move_t bishop_promo = encodeMove(start_square, target_square, 1, 0, 0, 1);
+                        move_t rook_promo = encodeMove(start_square, target_square, 1, 0, 1, 0);
+                        move_t queen_promo = encodeMove(start_square, target_square, 1, 0, 1, 1);
+                        addMove(knight_promo, move_list);
+                        addMove(bishop_promo, move_list);
+                        addMove(rook_promo, move_list);
+                        addMove(queen_promo, move_list);
+                    }
+                    else if ((1ULL << start_square) & second_rank && !((1ULL << target_square) & occupancy_bitboards[both]))
+                    {
+                        // add double pawn push if double push square is not occupied
+                        if (!((1ULL << double_pawn_push_square) & occupancy_bitboards[both]))
+                        {
+                            move_t double_push = encodeMove(start_square, double_pawn_push_square, 0, 0, 0, 1);
+                            addMove(double_push, move_list);
+                        }
+
+                        // add single pawn push
+                        move_t single_push = encodeMove(start_square, target_square, 0, 0, 0, 0);
+                        addMove(single_push, move_list);
+                    }
+                    else if (!((1ULL << target_square) & occupancy_bitboards[both]))
+                    {
+                        move_t single_push = encodeMove(start_square, target_square, 0, 0, 0, 0);
+                        addMove(single_push, move_list);
+                    }
+
+                    attacks = pawn_attacks[white][start_square] & (occupancy_bitboards[black] | (en_passant != no_sq ? (1ULL << en_passant) : 0ULL));
+                    // generate white pawn attacks
+                    while (attacks)
+                    {
+                        attacked_square = get_lsb_index(attacks);
+                        if ((1ULL << attacked_square) & eighth_rank)
+                        {
+                            move_t knight_promo_capture = encodeMove(start_square, attacked_square, 1, 1, 0, 0);
+                            move_t bishop_promo_capture = encodeMove(start_square, attacked_square, 1, 1, 0, 1);
+                            move_t rook_promo_capture = encodeMove(start_square, attacked_square, 1, 1, 1, 0);
+                            move_t queen_promo_capture = encodeMove(start_square, attacked_square, 1, 1, 1, 1);
+                            addMove(knight_promo_capture, move_list);
+                            addMove(bishop_promo_capture, move_list);
+                            addMove(rook_promo_capture, move_list);
+                            addMove(queen_promo_capture, move_list);
+                        }
+                        else if (attacked_square = en_passant)
+                        {
+                            move_t ep_capture = encodeMove(start_square, en_passant, 0, 1, 0, 1);
+                            addMove(ep_capture, move_list);
+                        }
+
+                        else
+                        {
+                            move_t capture = encodeMove(start_square, attacked_square, 0, 1, 0, 0);
+                            addMove(capture, move_list);
+                        }
+                        popBit(attacks, attacked_square);
+                    }
+                    popBit(bitboard, start_square);
+                }
+            }
+        }
+        else // generating black pawn moves and black king castling moves
+        {
+        }
+        // generating knight moves
+        bitboard = (side == white) ? piece_bitboards[N] : piece_bitboards[n];
+        while (bitboard)
+        {
+            start_square = get_lsb_index(bitboard);
+            attacks = knight_attacks[start_square] & ~((side == white) ? occupancy_bitboards[white] : occupancy_bitboards[black]);
+            while (attacks)
+            {
+            }
+        }
+
+        // generating bishop moves
+
+        // generating rook moves
+
+        // generating queen moves
+
+        // generating king moves
+    }
+}
 /******************\
 --------------------
     Initialization
@@ -1277,6 +1497,18 @@ void initFENPosition(char *FEN)
         }
     }
     current_index++;
+    /*
+    I decided to use strncpy() and sscanf() to read the rest of the FEN string to initialize game state variables.
+    One advantage of this approach is that its more compact compared to manually incrementing current_index and reading the string
+    at each step with if/else statements
+
+    One disadvantage (which had me debugging for a bit) is that it will initialize extremely incorrect game state variables when
+    given an incomplete FEN string, for example :
+     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
+     The starting position, but without any of the game state information and only the board information
+     When debugging, I'd see that half-moves was set to something like -81555201...
+     So overall, this function depends on being given a complete and well-formatted string, or else bugs will surely be encountered.
+    */
     char rest_of_FEN[64];
     strncpy(rest_of_FEN, &FEN[current_index], sizeof(rest_of_FEN) - 1);
     rest_of_FEN[sizeof(rest_of_FEN) - 1] = '\0';
@@ -1356,6 +1588,10 @@ void initEverything()
 int main() // entry point
 {
     initEverything();
-    initFENPosition(starting_postition_fen);
-    printAttackedSquares(black);
+    initFENPosition("rnbqkbnr/1ppp1ppp/p7/4pP2/8/8/PPPPP1PP/RNBQKBNR w KQkq e6 0 3");
+    moves pawn_moves;
+    pawn_moves.total_count = 0;
+    genMoves(&pawn_moves);
+    printMoveList(&pawn_moves);
+    printBoard();
 }
