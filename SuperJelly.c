@@ -467,7 +467,7 @@ const U64 first_rank = 18374686479671623680ULL;
 // count set bits on a bitboard
 #define countBits(bitboard) __builtin_popcountll(bitboard)
 
-// get index of least significant first bit
+// get index of least significant set bit
 #define get_lsb_index(bitboard) __builtin_ctzll(bitboard)
 
 void printBitboard(U64 bitboard) // helpful debugging function to print a given bitboard!
@@ -1301,7 +1301,9 @@ Right shift to reduce the bits to the proper amount
 
 void addMove(move_t move, moves *move_list)
 {
+
     move_list->moves[move_list->total_count] = move;
+
     move_list->total_count++;
 }
 
@@ -1353,6 +1355,7 @@ void printMoveList(moves *move_list)
 
 static inline void genMoves(moves *move_list)
 {
+    move_list->total_count = 0;
     int start_square, target_square, double_pawn_push_square, attacked_square;
     U64 bitboard, attacks;
     for (int piece = P; piece < k; piece++)
@@ -1417,7 +1420,7 @@ static inline void genMoves(moves *move_list)
                             addMove(rook_promo_capture, move_list);
                             addMove(queen_promo_capture, move_list);
                         }
-                        else if (attacked_square = en_passant)
+                        else if (attacked_square == en_passant)
                         {
                             move_t ep_capture = encodeMove(start_square, en_passant, 0, 1, 0, 1);
                             addMove(ep_capture, move_list);
@@ -1433,30 +1436,147 @@ static inline void genMoves(moves *move_list)
                     popBit(bitboard, start_square);
                 }
             }
+            if (piece == K) // generate castling
+            {
+            }
+            // generating knight moves
         }
         else // generating black pawn moves and black king castling moves
         {
         }
-        // generating knight moves
-        bitboard = (side == white) ? piece_bitboards[N] : piece_bitboards[n];
-        while (bitboard)
+        if ((side == white) ? piece == N : piece == n) // gen knight moves
         {
-            start_square = get_lsb_index(bitboard);
-            attacks = knight_attacks[start_square] & ~((side == white) ? occupancy_bitboards[white] : occupancy_bitboards[black]);
-            while (attacks)
+            bitboard = (side == white) ? piece_bitboards[N] : piece_bitboards[n];
+            while (bitboard)
             {
+                start_square = get_lsb_index(bitboard);
+                attacks = knight_attacks[start_square] & ~((side == white) ? occupancy_bitboards[white] : occupancy_bitboards[black]);
+                while (attacks)
+                {
+                    attacked_square = get_lsb_index(attacks);
+                    if ((1ULL << attacked_square) & ((side == white) ? occupancy_bitboards[black] : occupancy_bitboards[white])) // move is a capture
+                    {
+                        move_t knight_capture = encodeMove(start_square, attacked_square, 0, 1, 0, 0);
+                        addMove(knight_capture, move_list);
+                    }
+                    else // move is a quiet move
+                    {
+                        move_t knight_move = encodeMove(start_square, attacked_square, 0, 0, 0, 0);
+                        addMove(knight_move, move_list);
+                    }
+                    popBit(attacks, attacked_square);
+                }
+                popBit(bitboard, start_square);
+            }
+        }
+        if ((side == white) ? piece == B : piece == b) // generating bishop moves
+        {
+            bitboard = (side == white) ? piece_bitboards[B] : piece_bitboards[b];
+            while (bitboard)
+            {
+                start_square = get_lsb_index(bitboard);
+                attacks = genBishopAttacks(occupancy_bitboards[both], start_square) & ~((side == white) ? occupancy_bitboards[white] : occupancy_bitboards[black]);
+                while (attacks)
+                {
+                    attacked_square = get_lsb_index(attacks);
+                    if ((1ULL << attacked_square) & ((side == white) ? occupancy_bitboards[black] : occupancy_bitboards[white]))
+                    {
+                        move_t bishop_capture = encodeMove(start_square, attacked_square, 0, 1, 0, 0);
+                        addMove(bishop_capture, move_list);
+                    }
+                    else
+                    {
+                        move_t bishop_move = encodeMove(start_square, attacked_square, 0, 0, 0, 0);
+                        addMove(bishop_move, move_list);
+                    }
+                    popBit(attacks, attacked_square);
+                }
+                popBit(bitboard, start_square);
             }
         }
 
-        // generating bishop moves
-
-        // generating rook moves
+        if ((side == white) ? piece == R : piece == r) // generating rook moves
+        {
+            bitboard = (side == white) ? piece_bitboards[R] : piece_bitboards[r];
+            while (bitboard)
+            {
+                start_square = get_lsb_index(bitboard);
+                attacks = genRookAttacks(occupancy_bitboards[both], start_square) & ~((side == white) ? occupancy_bitboards[white] : occupancy_bitboards[black]);
+                while (attacks)
+                {
+                    attacked_square = get_lsb_index(attacks);
+                    if ((1ULL << attacked_square) & ((side == white) ? occupancy_bitboards[black] : occupancy_bitboards[white]))
+                    {
+                        move_t rook_capture = encodeMove(start_square, attacked_square, 0, 1, 0, 0);
+                        addMove(rook_capture, move_list);
+                    }
+                    else
+                    {
+                        move_t rook_move = encodeMove(start_square, attacked_square, 0, 0, 0, 0);
+                        addMove(rook_move, move_list);
+                    }
+                    popBit(attacks, attacked_square);
+                }
+                popBit(bitboard, start_square);
+            }
+        }
 
         // generating queen moves
+        if ((side == white) ? piece == Q : piece == q)
+        {
+            bitboard = (side == white) ? piece_bitboards[Q] : piece_bitboards[q];
+            while (bitboard)
+            {
+                start_square = get_lsb_index(bitboard);
+                attacks = genQueenAttacks(occupancy_bitboards[both], start_square) & ~((side == white) ? occupancy_bitboards[white] : occupancy_bitboards[black]);
+                while (attacks)
+                {
+                    attacked_square = get_lsb_index(attacks);
+                    if ((1ULL << attacked_square) & ((side == white) ? occupancy_bitboards[black] : occupancy_bitboards[white]))
+                    {
+                        move_t queen_capture = encodeMove(start_square, attacked_square, 0, 1, 0, 0);
+                        addMove(queen_capture, move_list);
+                    }
+                    else
+                    {
+                        move_t queen_move = encodeMove(start_square, attacked_square, 0, 0, 0, 0);
+                        addMove(queen_move, move_list);
+                    }
+                    popBit(attacks, attacked_square);
+                }
+                popBit(bitboard, start_square);
+            }
+        }
 
         // generating king moves
+        if ((side == white) ? piece == K : piece == k)
+        {
+            bitboard = (side == white) ? piece_bitboards[K] : piece_bitboards[k];
+            while (bitboard)
+            {
+                start_square = get_lsb_index(bitboard);
+                attacks = king_attacks[start_square] & ~((side == white) ? occupancy_bitboards[white] : occupancy_bitboards[black]);
+                while (attacks)
+                {
+                    attacked_square = get_lsb_index(attacks);
+                    if ((1ULL << attacked_square) & ((side == white) ? occupancy_bitboards[black] : occupancy_bitboards[white]))
+                    {
+                        move_t king_capture = encodeMove(start_square, attacked_square, 0, 1, 0, 0);
+                        addMove(king_capture, move_list);
+                    }
+                    else
+                    {
+                        move_t king_move = encodeMove(start_square, attacked_square, 0, 0, 0, 0);
+                        addMove(king_move, move_list);
+                    }
+                    popBit(attacks, attacked_square);
+                }
+                popBit(bitboard, start_square);
+            }
+        }
     }
 }
+
 /******************\
 --------------------
     Initialization
@@ -1588,7 +1708,7 @@ void initEverything()
 int main() // entry point
 {
     initEverything();
-    initFENPosition("rnbqkbnr/1ppp1ppp/p7/4pP2/8/8/PPPPP1PP/RNBQKBNR w KQkq e6 0 3");
+    initFENPosition("rnbqkbnr/pppp1pp1/7p/4p3/3PP3/P6P/1PP2PP1/RNBQKBNR w KQq - 1 5");
     moves pawn_moves;
     pawn_moves.total_count = 0;
     genMoves(&pawn_moves);
