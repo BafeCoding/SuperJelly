@@ -1358,7 +1358,7 @@ static inline void genMoves(moves *move_list)
     move_list->total_count = 0;
     int start_square, target_square, double_pawn_push_square, attacked_square;
     U64 bitboard, attacks;
-    for (int piece = P; piece < k; piece++)
+    for (int piece = P; piece <= k; piece++)
     {
         bitboard = piece_bitboards[piece];
         // generating white pawn moves and white king castling
@@ -1438,11 +1438,128 @@ static inline void genMoves(moves *move_list)
             }
             if (piece == K) // generate castling
             {
+                if (castle & wk)
+                {
+                    if (!getBit(occupancy_bitboards[both], f1) && !(getBit(occupancy_bitboards[both], g1)))
+                    {
+                        if (!isSquareAttacked(e1, black) && !isSquareAttacked(f1, black) && !isSquareAttacked(g1, black))
+                        {
+                            move_t white_kingside_castle = encodeMove(e1, g1, 0, 0, 1, 0);
+                            addMove(white_kingside_castle, move_list);
+                        }
+                    }
+                }
+                if (castle & wq)
+                {
+                    if (!getBit(occupancy_bitboards[both], d1) && !(getBit(occupancy_bitboards[both], c1)) && !(getBit(occupancy_bitboards[both], b1)))
+                    {
+                        if (!isSquareAttacked(e1, black) && !isSquareAttacked(d1, black) && !isSquareAttacked(c1, black) && !isSquareAttacked(b1, black))
+                        {
+                            move_t white_queenside_castle = encodeMove(e8, g8, 0, 0, 1, 1);
+                            addMove(white_queenside_castle, move_list);
+                        }
+                    }
+                }
             }
-            // generating knight moves
         }
         else // generating black pawn moves and black king castling moves
         {
+            if (piece == p) // generate pawn moves
+            {
+                // generate quiet(non capture ) pawn moves
+                while (bitboard)
+                {
+                    start_square = get_lsb_index(bitboard);
+                    target_square = start_square + 8;
+                    double_pawn_push_square = start_square + 16;
+                    if ((1ULL << start_square) & second_rank && !((1ULL << target_square) & occupancy_bitboards[both])) // black pawn is on rank 2 and can therefore promote
+                    {
+
+                        move_t knight_promo = encodeMove(start_square, target_square, 1, 0, 0, 0);
+                        move_t bishop_promo = encodeMove(start_square, target_square, 1, 0, 0, 1);
+                        move_t rook_promo = encodeMove(start_square, target_square, 1, 0, 1, 0);
+                        move_t queen_promo = encodeMove(start_square, target_square, 1, 0, 1, 1);
+                        addMove(knight_promo, move_list);
+                        addMove(bishop_promo, move_list);
+                        addMove(rook_promo, move_list);
+                        addMove(queen_promo, move_list);
+                    }
+                    else if ((1ULL << start_square) & seventh_rank && !((1ULL << target_square) & occupancy_bitboards[both])) // black pawn is on second rank and can double push
+                    {
+                        // add double pawn push if double push square is not occupied
+                        if (!((1ULL << double_pawn_push_square) & occupancy_bitboards[both]))
+                        {
+                            move_t double_push = encodeMove(start_square, double_pawn_push_square, 0, 0, 0, 1);
+                            addMove(double_push, move_list);
+                        }
+
+                        // add single pawn push
+                        move_t single_push = encodeMove(start_square, target_square, 0, 0, 0, 0);
+                        addMove(single_push, move_list);
+                    }
+                    else if (!((1ULL << target_square) & occupancy_bitboards[both]))
+                    {
+                        move_t single_push = encodeMove(start_square, target_square, 0, 0, 0, 0);
+                        addMove(single_push, move_list);
+                    }
+
+                    attacks = pawn_attacks[black][start_square] & (occupancy_bitboards[white] | (en_passant != no_sq ? (1ULL << en_passant) : 0ULL));
+                    // generate white pawn attacks
+                    while (attacks)
+                    {
+                        attacked_square = get_lsb_index(attacks);
+                        if ((1ULL << attacked_square) & first_rank) // promo capture
+                        {
+                            move_t knight_promo_capture = encodeMove(start_square, attacked_square, 1, 1, 0, 0);
+                            move_t bishop_promo_capture = encodeMove(start_square, attacked_square, 1, 1, 0, 1);
+                            move_t rook_promo_capture = encodeMove(start_square, attacked_square, 1, 1, 1, 0);
+                            move_t queen_promo_capture = encodeMove(start_square, attacked_square, 1, 1, 1, 1);
+                            addMove(knight_promo_capture, move_list);
+                            addMove(bishop_promo_capture, move_list);
+                            addMove(rook_promo_capture, move_list);
+                            addMove(queen_promo_capture, move_list);
+                        }
+                        else if (attacked_square == en_passant)
+                        {
+                            move_t ep_capture = encodeMove(start_square, en_passant, 0, 1, 0, 1);
+                            addMove(ep_capture, move_list);
+                        }
+
+                        else
+                        {
+                            move_t capture = encodeMove(start_square, attacked_square, 0, 1, 0, 0);
+                            addMove(capture, move_list);
+                        }
+                        popBit(attacks, attacked_square);
+                    }
+                    popBit(bitboard, start_square);
+                }
+            }
+            if (piece == k) // generate castling
+            {
+                if (castle & bk)
+                {
+                    if (!getBit(occupancy_bitboards[both], f8) && !(getBit(occupancy_bitboards[both], g8)))
+                    {
+                        if (!isSquareAttacked(e8, white) && !isSquareAttacked(f8, white) && !isSquareAttacked(g8, white))
+                        {
+                            move_t black_kingside_castle = encodeMove(e1, g1, 0, 0, 1, 0);
+                            addMove(black_kingside_castle, move_list);
+                        }
+                    }
+                }
+                if (castle & bq)
+                {
+                    if (!getBit(occupancy_bitboards[both], d8) && !(getBit(occupancy_bitboards[both], c8)) && !(getBit(occupancy_bitboards[both], b8)))
+                    {
+                        if (!isSquareAttacked(e8, white) && !isSquareAttacked(d8, white) && !isSquareAttacked(c8, white) && !isSquareAttacked(b8, white))
+                        {
+                            move_t black_queenside_castle = encodeMove(e8, g8, 0, 0, 1, 1);
+                            addMove(black_queenside_castle, move_list);
+                        }
+                    }
+                }
+            }
         }
         if ((side == white) ? piece == N : piece == n) // gen knight moves
         {
@@ -1708,7 +1825,7 @@ void initEverything()
 int main() // entry point
 {
     initEverything();
-    initFENPosition("rnbqkbnr/pppp1pp1/7p/4p3/3PP3/P6P/1PP2PP1/RNBQKBNR w KQq - 1 5");
+    initFENPosition(FEN_test_2);
     moves pawn_moves;
     pawn_moves.total_count = 0;
     genMoves(&pawn_moves);
