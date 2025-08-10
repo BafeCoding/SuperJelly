@@ -176,6 +176,7 @@ enum pieces
     r,
     q,
     k,
+    no_piece
 };
 
 typedef struct
@@ -1144,6 +1145,8 @@ U64 piece_bitboards[12];
 
 U64 occupancy_bitboards[3];
 
+int piece_on_square[64]; // an array I implemented later on to use a lookup table for find a piece for making moves.
+
 int side = 0;
 
 int en_passant = no_sq;
@@ -1153,6 +1156,20 @@ int castle = 0;
 int half_moves = 0;
 
 int full_moves = 0;
+
+typedef struct
+{
+    U64 piece_bitboards_undo[12];
+    U64 occupancy_bitboards_undo[3];
+    int piece_on_square_undo[64];
+    int side_undo;
+    int en_passant_undo;
+    int castle_undo;
+    int half_moves_undo;
+    int full_moves_undo;
+} Undo;
+
+Undo undo_move; // create an instance of the struct type defined above
 
 void printBoard()
 {
@@ -1307,12 +1324,6 @@ void addMove(move_t move, moves *move_list)
     move_list->total_count++;
 }
 
-void makeMove(move_t)
-{
-}
-void unmakeMove()
-{
-}
 /*
 Like it has usually been done some other times within this code, I decided to create a printMove() function for debugging purposes
 */
@@ -1693,7 +1704,68 @@ static inline void genMoves(moves *move_list)
         }
     }
 }
+/******************\
+--------------------
+   Make/Unmake Moves
+--------------------
+\******************/
+/*
+In this code section, functions will be created for making and unmaking moves on the board so we can later implement them within the
+search function.
+*/
+void makeMove(move_t move)
+{
+    // save current game state in undo struct
+    memcpy(undo_move.piece_bitboards_undo, piece_bitboards, sizeof(piece_bitboards));
+    memcpy(undo_move.occupancy_bitboards_undo, occupancy_bitboards, sizeof(occupancy_bitboards));
+    memcpy(undo_move.piece_on_square_undo, piece_on_square, sizeof(piece_on_square));
+    undo_move.castle_undo = castle;
+    undo_move.en_passant_undo = en_passant;
+    undo_move.full_moves_undo = full_moves;
+    undo_move.half_moves_undo = half_moves;
+    undo_move.side_undo = side;
 
+    // extract neccesary info from move passed to function
+    int from = getSourceSq(move);
+    int piece = piece_on_square[from];
+    int to = getTargetSq(move);
+    int flags = getFlags(move);
+    // update piece bitboards according to move
+    if (piece_on_square[to] != no_piece) // move is a capture, need to pop bit from opposing side piece and occupancy bitboard
+    {
+        int captured_piece = piece_on_square[to];
+        popBit(piece_bitboards[piece], from);
+        popBit(occupancy_bitboards[side], from);
+        piece_on_square[from] = no_piece;
+        setBit(piece_bitboards[piece], to);
+        setBit(occupancy_bitboards[side], to);
+        popBit(occupancy_bitboards[!side], from);
+        piece_on_square[to] = piece;
+        popBit(piece_bitboards[captured_piece], to);
+        occupancy_bitboards[both] = occupancy_bitboards[white] | occupancy_bitboards[black];
+    }
+    else // move is a quiet move
+    {
+        // use XOR to unset bit of square piece moves from on both piece and occupancy bitboard
+        popBit(piece_bitboards[piece], from);
+        popBit(occupancy_bitboards[side], from);
+        // update the square to have no_piece on it in piece_on_square[64] array
+        piece_on_square[from] = no_piece;
+        // use OR to set bit of to square on in both the piece bitboard of the piece and the occupancy bitboard
+        setBit(piece_bitboards[piece], to);
+        setBit(occupancy_bitboards[side], to);
+        // update piece_on_square[to] to be the piece which moves
+        piece_on_square[to] = piece;
+        // update occupancies of both with OR
+        occupancy_bitboards[both] = occupancy_bitboards[white] | occupancy_bitboards[black];
+    }
+    // update game state variables according to move
+}
+
+void unmakeMove()
+{
+    // use the saved variables in the undo struct to restore saved game state.
+}
 /******************\
 --------------------
     Initialization
@@ -1706,7 +1778,12 @@ current position into our piece bitboard.
 */
 void initFENPosition(char *FEN)
 {
-    // erase data from piece and occupancy bitboards
+    // erase data from piece and occupancy bitboards, and also reset piece_on_square board
+    for (int square = 0; square < 64; square++)
+    {
+        piece_on_square[square] = no_piece;
+    }
+    printf("piece on square : %d\n", piece_on_square[14]);
     memset(piece_bitboards, 0ULL, sizeof(piece_bitboards));
     memset(occupancy_bitboards, 0ULL, sizeof(occupancy_bitboards));
     int current_index = 0;
@@ -1729,6 +1806,7 @@ void initFENPosition(char *FEN)
             else
             {
                 setBit(piece_bitboards[pieces_to_encoded_constant[FEN[current_index]]], square);
+                piece_on_square[square] = pieces_to_encoded_constant[FEN[current_index]];
             }
             current_index++;
         }
@@ -1825,10 +1903,15 @@ void initEverything()
 int main() // entry point
 {
     initEverything();
-    initFENPosition(FEN_test_2);
+    initFENPosition(starting_postition_fen);
     moves pawn_moves;
     pawn_moves.total_count = 0;
     genMoves(&pawn_moves);
     printMoveList(&pawn_moves);
+    move_t move = pawn_moves.moves[0];
+    for (int square = 0; square < 64; square++)
+    {
+        printf("%d\n", piece_on_square[square]);
+    }
     printBoard();
 }
