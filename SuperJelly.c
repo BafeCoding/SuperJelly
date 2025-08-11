@@ -11,6 +11,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
+
 /******************\
 --------------------
    DEFINITIONS
@@ -127,6 +129,7 @@ int files_to_int[] = {
     ['h'] = 7};
 
 /*
+
 ENUM for castling rights.
 logic goes like this :
 
@@ -181,7 +184,7 @@ enum pieces
 
 typedef struct
 {
-    int moves[256];
+    move_t moves[1028];
     int total_count;
 } moves;
 
@@ -1355,8 +1358,8 @@ void printMoveList(moves *move_list)
     printf("list of moves : [");
     for (int i = 0; i < move_list->total_count; i++)
     {
-        printf(" %s%s, ", square_to_coords[getSourceSq(move_list->moves[i])], square_to_coords[getTargetSq(move_list->moves[i])]);
-        if (i + 1 % 17 == 0) // seperate lines every 16 moves
+        printf(" %d : %s%s, ", i, square_to_coords[getSourceSq(move_list->moves[i])], square_to_coords[getTargetSq(move_list->moves[i])]);
+        if (((i + 1) % 17) == 0) // seperate lines every 16 moves
         {
             printf("\n");
         }
@@ -1728,11 +1731,15 @@ void makeMove(move_t move)
     // extract neccesary info from move passed to function
     int from = getSourceSq(move);
     int piece = piece_on_square[from];
+    printf("piece in question : %d\n", piece);
     int to = getTargetSq(move);
     int flags = getFlags(move);
+    int capture = 0;
+
     // update piece bitboards according to move
     if (piece_on_square[to] != no_piece) // move is a capture, need to pop bit from opposing side piece and occupancy bitboard
     {
+        capture = 1;
         int captured_piece = piece_on_square[to];
         popBit(piece_bitboards[piece], from);
         popBit(occupancy_bitboards[side], from);
@@ -1756,16 +1763,271 @@ void makeMove(move_t move)
         setBit(occupancy_bitboards[side], to);
         // update piece_on_square[to] to be the piece which moves
         piece_on_square[to] = piece;
+        if (flags == 0b0010) // move is a kingside castle, king already moved. need to move the rook aswell
+        {
+
+            // initialize variables for the rook based on side to move
+            int castle_piece = (side == white) ? R : r;
+            int castle_from = (side == white) ? h1 : h8;
+            int castle_to = (side == white) ? f1 : f8;
+            // unset bits of rook from piece and occupancy bitboards, and update piece_on_square aswell
+            popBit(piece_bitboards[castle_piece], castle_from);
+            popBit(occupancy_bitboards[side], castle_from);
+            piece_on_square[castle_from] = no_piece;
+            // set bits of to square
+            setBit(piece_bitboards[castle_piece], castle_to);
+            setBit(occupancy_bitboards[side], castle_to);
+
+            piece_on_square[castle_to] = castle_piece;
+        }
+        else if (flags == 0b0011) // queenside castle
+        {
+            // same process as kingside castling, just for queenside
+            int castle_piece = (side == white) ? R : r;
+            int castle_from = (side == white) ? a1 : a8;
+            int castle_to = (side == white) ? d1 : d8;
+            popBit(piece_bitboards[castle_piece], castle_from);
+            popBit(occupancy_bitboards[side], castle_from);
+
+            piece_on_square[castle_from] = no_piece;
+
+            setBit(piece_bitboards[castle_piece], castle_to);
+            setBit(occupancy_bitboards[side], castle_to);
+
+            piece_on_square[castle_to] = castle_piece;
+        }
         // update occupancies of both with OR
         occupancy_bitboards[both] = occupancy_bitboards[white] | occupancy_bitboards[black];
     }
+    if (flags & 0b1000) // promotion occured, extra handling is needed
+    {
+        int promo_piece;
+        switch (flags)
+        {
+        case 0b1000:
+            promo_piece = (side == white) ? N : n;
+            break;
+        case 0b1001:
+            promo_piece = (side == white) ? B : b;
+            break;
+        case 0b1010:
+            promo_piece = (side == white) ? R : r;
+            break;
+        case 0b1011:
+            promo_piece = (side == white) ? Q : q;
+            break;
+        case 0b1100:
+            promo_piece = (side == white) ? N : n;
+            break;
+        case 0b1101:
+            promo_piece = (side == white) ? B : b;
+            break;
+        case 0b1110:
+            promo_piece = (side == white) ? R : r;
+            break;
+        case 0b1111:
+            promo_piece = (side == white) ? Q : q;
+            break;
+        }
+        popBit(piece_bitboards[(side == white) ? P : p], to);
+        piece_on_square[from] = no_piece;
+        setBit(piece_bitboards[promo_piece], to);
+        piece_on_square[to] = promo_piece;
+    }
     // update game state variables according to move
+
+    // update castling
+    /*
+     Personal thinking here :
+     Castling rights can only be lost, not gained
+     The four ways in which they can be lost are :
+     1. The act of castling itself
+     2. Moving your king
+     3. Moving a rook, losing you the castling rights of the corresponding side the rook was on
+     4. Your rook being captured
+     All of these checks should be implemented, updating castling rights using XOR.
+    */
+    if (castle)
+    {
+        if (side == white)
+        {
+            // this checks for 1 and 2 since castling is encoded as the king moving from e1 to either g1 or c1
+            if (piece == K) // king was moved, remove rights for both kingside and queenside
+            {
+                castle ^= wk;
+                castle ^= wq;
+            }
+            // check for 3
+            if (piece == R) // rook moved
+            {
+                if (from == h1) // kingside rook moved, remove kingside castling rights
+                {
+                    castle ^= wk;
+                }
+                else if (from == a1) // queenside rook moved, remove queenside castling rights
+                {
+                    castle ^= wq;
+                }
+            }
+            // check for 4
+            if (to == h8 && piece_on_square[to] == r)
+            {
+                castle ^= bk;
+            }
+            else if (to == a8 && piece_on_square[to] == r)
+            {
+                castle ^= bq;
+            }
+        }
+        else
+        {
+
+            if (piece == k) // king was moved, remove rights for both kingside and queenside
+            {
+                castle ^= bk;
+                castle ^= bq;
+            }
+            // check for 3
+            if (piece == r) // rook moved
+            {
+                if (from == h8) // kingside rook moved, remove kingside castling rights
+                {
+                    castle ^= bk;
+                }
+                else if (from == a8) // queenside rook moved, remove queenside castling rights
+                {
+                    castle ^= bq;
+                }
+            }
+            // check for 4
+            if (to == h1 && piece_on_square[to] == R)
+            {
+                castle ^= wk;
+            }
+            else if (to == a1 && piece_on_square[to] == R)
+            {
+                castle ^= wq;
+            }
+        }
+    }
+    // update en passant
+
+    if ((piece == P || piece == p) && (flags == 0b0001))
+    {
+
+        en_passant = (side == white) ? from - 8 : from + 8;
+    }
+    else if (en_passant != no_sq)
+    {
+        en_passant = no_sq;
+    }
+
+    // update fullmoves
+    if (side == black)
+    {
+        full_moves++;
+    }
+
+    // update halfmoves
+    if (piece == P || piece == p || capture)
+    {
+        half_moves = 0;
+    }
+    else
+    {
+        half_moves++;
+    }
+
+    // flip side to move
+    side = !side;
 }
 
 void unmakeMove()
 {
     // use the saved variables in the undo struct to restore saved game state.
+    memcpy(piece_bitboards, undo_move.piece_bitboards_undo, sizeof(piece_bitboards));
+    memcpy(occupancy_bitboards, undo_move.occupancy_bitboards_undo, sizeof(occupancy_bitboards));
+    memcpy(piece_on_square, undo_move.piece_on_square_undo, sizeof(piece_on_square));
+    castle = undo_move.castle_undo;
+    en_passant = undo_move.en_passant_undo;
+    full_moves = undo_move.full_moves_undo;
+    half_moves = undo_move.half_moves_undo;
+    side = undo_move.side_undo;
 }
+/******************\
+--------------------
+    Evaluation
+--------------------
+\******************/
+int pieceValue[12] = {
+    1,
+    3,
+    3,
+    5,
+    9,
+    10000,
+    1,
+    3,
+    3,
+    5,
+    9,
+    10000};
+int pieceScore()
+{
+    int score = 0;
+    for (int piece = P; piece <= K; piece++)
+    {
+        score += countBits(piece_bitboards[piece]) * pieceValue[piece];
+    }
+    for (int piece = p; piece <= k; piece++)
+    {
+        score -= countBits(piece_bitboards[piece]) * pieceValue[piece];
+    }
+    return score;
+}
+int evaluate()
+{
+    int eval = 0;
+    eval += pieceScore();
+    // printf("evaluation %d negative evaluation %d\n", eval, -eval);
+    return (side == white) ? eval : -eval;
+}
+/******************\
+--------------------
+       Search
+--------------------
+\******************/
+
+int negamax(int depth)
+{
+    if (depth == 0)
+    {
+        return evaluate();
+    }
+    int return_array[2];
+    int best_score = -INT32_MAX;
+    move_t bestMove;
+
+    moves move_list;
+    genMoves(&move_list);
+    printf("%d\n", move_list.total_count);
+    for (int i = 0; i < move_list.total_count; i++)
+    {
+        printf("source square : %d.  target square : %d\n", getSourceSq(move_list.moves[i]), getTargetSq(move_list.moves[i]));
+        makeMove(move_list.moves[0]);
+        int score = -negamax(depth - 1);
+        unmakeMove();
+        if (score > best_score)
+        {
+            best_score = score;
+            bestMove = move_list.moves[0];
+        }
+    }
+    return_array[0] = bestMove;
+    return_array[1] = best_score;
+    return best_score;
+}
+
 /******************\
 --------------------
     Initialization
@@ -1783,7 +2045,6 @@ void initFENPosition(char *FEN)
     {
         piece_on_square[square] = no_piece;
     }
-    printf("piece on square : %d\n", piece_on_square[14]);
     memset(piece_bitboards, 0ULL, sizeof(piece_bitboards));
     memset(occupancy_bitboards, 0ULL, sizeof(occupancy_bitboards));
     int current_index = 0;
@@ -1902,16 +2163,9 @@ void initEverything()
 
 int main() // entry point
 {
+
     initEverything();
-    initFENPosition(starting_postition_fen);
-    moves pawn_moves;
-    pawn_moves.total_count = 0;
-    genMoves(&pawn_moves);
-    printMoveList(&pawn_moves);
-    move_t move = pawn_moves.moves[0];
-    for (int square = 0; square < 64; square++)
-    {
-        printf("%d\n", piece_on_square[square]);
-    }
+    initFENPosition(FEN_test_4);
     printBoard();
+    printf("score : %d", negamax(2));
 }
