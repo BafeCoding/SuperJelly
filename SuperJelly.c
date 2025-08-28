@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <windows.h>
 
 /******************\
 --------------------
@@ -1716,7 +1717,22 @@ static inline void genMoves(moves *move_list)
 In this code section, functions will be created for making and unmaking moves on the board so we can later implement them within the
 search function.
 */
-void makeMove(move_t move)
+int isIllegalPosition() // helper function to check if current board position is illegal.
+{
+
+    if (!countBits(piece_bitboards[k]) || !countBits(piece_bitboards[K]))
+    {
+        return 1;
+    }
+    int enemyKingSquare = get_lsb_index((side == white) ? piece_bitboards[k] : piece_bitboards[K]);
+    if (isSquareAttacked(enemyKingSquare, side))
+    {
+        return 1;
+    }
+    return 0;
+}
+
+int makeMove(move_t move)
 {
     // save current game state in undo struct
     memcpy(undo_move.piece_bitboards_undo, piece_bitboards, sizeof(piece_bitboards));
@@ -1731,8 +1747,9 @@ void makeMove(move_t move)
     // extract neccesary info from move passed to function
     int from = getSourceSq(move);
     int piece = piece_on_square[from];
-    printf("piece in question : %d\n", piece);
+    // printf("piece in question : %d\n", piece);
     int to = getTargetSq(move);
+    int captured_piece = piece_on_square[to];
     int flags = getFlags(move);
     int capture = 0;
 
@@ -1740,7 +1757,6 @@ void makeMove(move_t move)
     if (piece_on_square[to] != no_piece) // move is a capture, need to pop bit from opposing side piece and occupancy bitboard
     {
         capture = 1;
-        int captured_piece = piece_on_square[to];
         popBit(piece_bitboards[piece], from);
         popBit(occupancy_bitboards[side], from);
         piece_on_square[from] = no_piece;
@@ -1870,11 +1886,11 @@ void makeMove(move_t move)
                 }
             }
             // check for 4
-            if (to == h8 && piece_on_square[to] == r)
+            if (to == h8 && captured_piece == r)
             {
                 castle ^= bk;
             }
-            else if (to == a8 && piece_on_square[to] == r)
+            else if (to == a8 && captured_piece == r)
             {
                 castle ^= bq;
             }
@@ -1900,11 +1916,11 @@ void makeMove(move_t move)
                 }
             }
             // check for 4
-            if (to == h1 && piece_on_square[to] == R)
+            if (to == h1 && captured_piece == R)
             {
                 castle ^= wk;
             }
-            else if (to == a1 && piece_on_square[to] == R)
+            else if (to == a1 && captured_piece == R)
             {
                 castle ^= wq;
             }
@@ -1940,6 +1956,11 @@ void makeMove(move_t move)
 
     // flip side to move
     side = !side;
+    if (isIllegalPosition())
+    {
+        return 0;
+    }
+    return 1;
 }
 
 void unmakeMove()
@@ -1998,7 +2019,7 @@ int evaluate()
 --------------------
 \******************/
 
-int negamax(int depth)
+int negaMax(int depth) // the main search function, based off the negamax algorithm
 {
     if (depth == 0)
     {
@@ -2010,22 +2031,32 @@ int negamax(int depth)
 
     moves move_list;
     genMoves(&move_list);
-    printf("%d\n", move_list.total_count);
     for (int i = 0; i < move_list.total_count; i++)
     {
-        printf("source square : %d.  target square : %d\n", getSourceSq(move_list.moves[i]), getTargetSq(move_list.moves[i]));
-        makeMove(move_list.moves[0]);
-        int score = -negamax(depth - 1);
+
+        if (!makeMove(move_list.moves[i]))
+        {
+            continue;
+        }
+
+        int score = -negaMax(depth - 1);
         unmakeMove();
         if (score > best_score)
         {
             best_score = score;
-            bestMove = move_list.moves[0];
+            bestMove = move_list.moves[i];
         }
     }
-    return_array[0] = bestMove;
-    return_array[1] = best_score;
     return best_score;
+}
+/******************\
+--------------------
+    UCI/Time
+--------------------
+\******************/
+int getTime()
+{
+    return GetTickCount();
 }
 
 /******************\
@@ -2164,8 +2195,11 @@ void initEverything()
 int main() // entry point
 {
 
+    int start = getTime();
     initEverything();
-    initFENPosition(FEN_test_4);
+    initFENPosition("r2qkbnr/p4ppp/np2p3/2ppP3/3P4/2P4N/PPQ2PPP/RNB1K2R w KQkq - 0 8");
     printBoard();
-    printf("score : %d", negamax(2));
+    printf("score : %d\n", negaMax(2));
+    int end = getTime();
+    printf("time taken in ms : %d", end - start);
 }
