@@ -1975,6 +1975,17 @@ void unmakeMove()
     half_moves = undo_move.half_moves_undo;
     side = undo_move.side_undo;
 }
+
+int isIllegalMove(move_t move)
+{
+    if (!makeMove(move))
+    {
+        return 1;
+    }
+    int legality = isIllegalPosition();
+    unmakeMove();
+    return legality;
+}
 /******************\
 --------------------
     Evaluation
@@ -2051,12 +2062,33 @@ int negaMax(int depth) // the main search function, based off the negamax algori
 }
 /******************\
 --------------------
-    UCI/Time
+        Perft
 --------------------
 \******************/
 int getTime()
 {
     return GetTickCount();
+}
+
+long long perft(int depth)
+{
+    if (depth == 0)
+    {
+        return 1;
+    }
+    long long nodes = 0;
+    moves move_list;
+    genMoves(&move_list);
+    for (int i = 0; i < move_list.total_count; i++)
+    {
+        if (!makeMove(move_list.moves[i]))
+        {
+            continue;
+        }
+        nodes += perft(depth - 1);
+        unmakeMove();
+    }
+    return nodes;
 }
 
 /******************\
@@ -2188,6 +2220,90 @@ void initEverything()
 
 /******************\
 --------------------
+        UCI
+--------------------
+\******************/
+/*
+This section will define functions used for implementing the UCI protocol.
+*/
+// convert a move string sent by the engine (e.g "e2e4" or "h7h8q") to a move.
+move_t parseMove(char *move_string)
+{
+    // extract source square and target square from string
+    int from = (move_string[0] - 'a') + (move_string[1] - '0') * 8;
+    int to = (move_string[2] - 'a') + (move_string[3] - '0') * 8;
+    // initialize movelist and fill it with moves
+    moves move_list;
+    int flags;
+    genMoves(&move_list);
+    move_t move;
+    for (int i = 0; i < move_list.total_count; i++)
+    { // loop through generated moves
+        move = move_list.moves[i];
+        flags = getFlags(move);
+        // check if source and target squares match the move string
+        if (getSourceSq(move) == from && getTargetSq(move) == to)
+        {
+
+            int promo = getFlags(move);
+            if (promo & 0b1000)
+            { // promotion is available
+                if ((promo & 0b1000) && (move_string[4] == 'n'))
+                {
+                    if (!isIllegalMove(move))
+                    {
+                        return move;
+                    }
+                }
+                if ((promo & 0b1001) && (move_string[4] == 'b'))
+                {
+                    if (!isIllegalMove(move))
+                    {
+                        return move;
+                    }
+                }
+                if ((promo & 0b1010) && (move_string[4] == 'r'))
+                {
+                    if (!isIllegalMove(move))
+                    {
+                        return move;
+                    }
+                }
+                if ((promo & 0b1011) && (move_string[4] == 'q'))
+                {
+                    if (!isIllegalMove(move))
+                    {
+                        return move;
+                    }
+                }
+                continue;
+            }
+
+            return move;
+        }
+    }
+
+    // all checks failed, move is illegal.
+    return 0;
+}
+
+void parsePosition(char *input)
+{
+    // move pointer forward to skip "position" text
+    input += 9;
+    if ((strncmp(input, "startpos", 8)) == 0)
+    {
+        initFENPosition(starting_postition_fen);
+    }
+    else if ((strncmp(input, "fen", 3)) == 0)
+    {
+        input += 4; // move pointer forward to skip "fen " text
+        initFENPosition(input);
+    }
+}
+
+/******************\
+--------------------
         MAIN
 --------------------
 \******************/
@@ -2195,11 +2311,7 @@ void initEverything()
 int main() // entry point
 {
 
-    int start = getTime();
     initEverything();
-    initFENPosition("r2qkbnr/p4ppp/np2p3/2ppP3/3P4/2P4N/PPQ2PPP/RNB1K2R w KQkq - 0 8");
+    parsePosition("position starpos");
     printBoard();
-    printf("score : %d\n", negaMax(2));
-    int end = getTime();
-    printf("time taken in ms : %d", end - start);
 }
