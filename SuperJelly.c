@@ -2230,8 +2230,8 @@ This section will define functions used for implementing the UCI protocol.
 move_t parseMove(char *move_string)
 {
     // extract source square and target square from string
-    int from = (move_string[0] - 'a') + (move_string[1] - '0') * 8;
-    int to = (move_string[2] - 'a') + (move_string[3] - '0') * 8;
+    int from = (move_string[0] - 'a') + (8 - (move_string[1] - '0')) * 8;
+    int to = (move_string[2] - 'a') + (8 - (move_string[3] - '0')) * 8;
     // initialize movelist and fill it with moves
     moves move_list;
     int flags;
@@ -2297,8 +2297,86 @@ void parsePosition(char *input)
     }
     else if ((strncmp(input, "fen", 3)) == 0)
     {
-        input += 4; // move pointer forward to skip "fen " text
+        input += 4; // move pointer forward to skip "fen" text
         initFENPosition(input);
+    }
+    // check for "moves" in input string to see if moves need to be made.
+    char *moves_ptr = strstr(input, "moves");
+    if (moves_ptr != NULL)
+    {
+        moves_ptr += 6; // move pointer forward to skip "moves" text
+        char move_string[6];
+        while (sscanf(moves_ptr, "%s", move_string) == 1)
+        {
+            move_t move = parseMove(move_string);
+            if (move == 0)
+            {
+                printf("Illegal move: %s\n", move_string);
+                break;
+            }
+            if (!makeMove(move))
+            {
+                printf("Illegal move: %s\n", move_string);
+                unmakeMove();
+                break;
+            }
+            moves_ptr += strlen(move_string) + 1; // move pointer forward to next move
+        }
+    }
+}
+
+void parseGo() // a function to parse the "go" command sent by GUI to engine
+{
+}
+
+void uciLoop()
+{
+    // reset input and output buffers
+    setbuf(stdout, NULL);
+    setbuf(stdin, NULL);
+    // create buffer for input
+    char buffer[2000];
+    // send GUI info about engine and "uciok" command to begin UCI communcation
+    printf("id name Superjelly\n");
+    printf("id name Busayo Afe\n");
+    printf("uciok\n");
+    while (1)
+    {
+        for (int i = 0; i < 2000; i++) // manual memset(), encountered a bug related to it earlier so decided to use for loop for safety
+        {
+            buffer[i] = 0;
+        }
+        // flush the output stream to ensure output is sent to the GUI
+        fflush(stdout);
+        // use fgets to get input
+        if (!(fgets(buffer, 2000, stdin)))
+        {
+            continue;
+        }
+        if (buffer[0] == '\n') // ensure first char is not a newline resulting from possibly hitting the enter key, meaning input is available for parsing.
+        {
+            continue;
+        }
+        /*
+        the next command sent to the engine after "uci" will be "isready", to which our engine must reply with "readyok".
+         */
+        if (strncmp(buffer, "isready", 7) == 0)
+        {
+            printf("readyok\n");
+            continue;
+        }
+
+        else if (strncmp(buffer, "quit", 4) == 0)
+        {
+            break;
+        }
+        else if (strncmp(buffer, "uci", 3) == 0)
+        {
+
+            printf("id name Superjelly\n");
+            printf("id name Busayo Afe\n");
+            printf("uciok\n");
+        }
     }
 }
 
@@ -2312,6 +2390,13 @@ int main() // entry point
 {
 
     initEverything();
-    parsePosition("position starpos");
-    printBoard();
+    int debug = 0;
+    if (debug) // run debug code
+    {
+        parsePosition("position startpos moves e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 d2d5");
+        printBoard();
+    }
+    else
+    {
+    }
 }
