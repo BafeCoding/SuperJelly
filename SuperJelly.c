@@ -1,5 +1,3 @@
-
-
 #include <stdio.h>
 
 /******************\
@@ -1331,7 +1329,10 @@ void addMove(move_t move, moves *move_list)
 /*
 Like it has usually been done some other times within this code, I decided to create a printMove() function for debugging purposes
 */
-
+void printMoveUCI(move_t move) // print just the UCI-compliant move string (not yet supporting promotion)
+{
+    printf("\nString to send to UCI: %s%s\n", square_to_coords[getSourceSq(move)], square_to_coords[getTargetSq(move)]);
+}
 void printMove(move_t move)
 {
     // print source square of move
@@ -1470,7 +1471,7 @@ static inline void genMoves(moves *move_list)
                     {
                         if (!isSquareAttacked(e1, black) && !isSquareAttacked(d1, black) && !isSquareAttacked(c1, black) && !isSquareAttacked(b1, black))
                         {
-                            move_t white_queenside_castle = encodeMove(e8, g8, 0, 0, 1, 1);
+                            move_t white_queenside_castle = encodeMove(e1, c1, 0, 0, 1, 1);
                             addMove(white_queenside_castle, move_list);
                         }
                     }
@@ -1558,7 +1559,7 @@ static inline void genMoves(moves *move_list)
                     {
                         if (!isSquareAttacked(e8, white) && !isSquareAttacked(f8, white) && !isSquareAttacked(g8, white))
                         {
-                            move_t black_kingside_castle = encodeMove(e1, g1, 0, 0, 1, 0);
+                            move_t black_kingside_castle = encodeMove(e8, g8, 0, 0, 1, 0);
                             addMove(black_kingside_castle, move_list);
                         }
                     }
@@ -1569,7 +1570,7 @@ static inline void genMoves(moves *move_list)
                     {
                         if (!isSquareAttacked(e8, white) && !isSquareAttacked(d8, white) && !isSquareAttacked(c8, white) && !isSquareAttacked(b8, white))
                         {
-                            move_t black_queenside_castle = encodeMove(e8, g8, 0, 0, 1, 1);
+                            move_t black_queenside_castle = encodeMove(e8, c8, 0, 0, 1, 1);
                             addMove(black_queenside_castle, move_list);
                         }
                     }
@@ -1731,6 +1732,18 @@ int isIllegalPosition() // helper function to check if current board position is
     }
     return 0;
 }
+void unmakeMove()
+{
+    // use the saved variables in the undo struct to restore saved game state.
+    memcpy(piece_bitboards, undo_move.piece_bitboards_undo, sizeof(piece_bitboards));
+    memcpy(occupancy_bitboards, undo_move.occupancy_bitboards_undo, sizeof(occupancy_bitboards));
+    memcpy(piece_on_square, undo_move.piece_on_square_undo, sizeof(piece_on_square));
+    castle = undo_move.castle_undo;
+    en_passant = undo_move.en_passant_undo;
+    full_moves = undo_move.full_moves_undo;
+    half_moves = undo_move.half_moves_undo;
+    side = undo_move.side_undo;
+}
 
 int makeMove(move_t move)
 {
@@ -1752,22 +1765,27 @@ int makeMove(move_t move)
     int captured_piece = piece_on_square[to];
     int flags = getFlags(move);
     int capture = 0;
+    if (piece == no_piece) // no piece is on from square which doesn't make sense, makeMove fails.
+    {
+        return 0;
+    }
 
     // update piece bitboards according to move
     if (piece_on_square[to] != no_piece) // move is a capture, need to pop bit from opposing side piece and occupancy bitboard
     {
         capture = 1;
         popBit(piece_bitboards[piece], from);
+
         popBit(occupancy_bitboards[side], from);
         piece_on_square[from] = no_piece;
         setBit(piece_bitboards[piece], to);
         setBit(occupancy_bitboards[side], to);
-        popBit(occupancy_bitboards[!side], from);
+        popBit(occupancy_bitboards[!side], to);
         piece_on_square[to] = piece;
         popBit(piece_bitboards[captured_piece], to);
         occupancy_bitboards[both] = occupancy_bitboards[white] | occupancy_bitboards[black];
     }
-    else // move is a quiet move
+    else // move is a quiet move or en-passant
     {
         // use XOR to unset bit of square piece moves from on both piece and occupancy bitboard
         popBit(piece_bitboards[piece], from);
@@ -1779,6 +1797,12 @@ int makeMove(move_t move)
         setBit(occupancy_bitboards[side], to);
         // update piece_on_square[to] to be the piece which moves
         piece_on_square[to] = piece;
+        if (flags == 0b0101) // move is an en-passant capture, need to remove enemy pawn which was captured.
+        {
+            int captured_pawn_square = (side == white) ? to + 8 : to - 8;
+            popBit(occupancy_bitboards[!side], captured_pawn_square);
+            popBit(piece_bitboards[(side == white) ? p : P], captured_pawn_square);
+        }
         if (flags == 0b0010) // move is a kingside castle, king already moved. need to move the rook aswell
         {
 
@@ -1955,36 +1979,23 @@ int makeMove(move_t move)
     }
 
     // flip side to move
-    side = !side;
-    if (isIllegalPosition())
+    side ^= 1;
+    if (isIllegalPosition()) // resulting position from making move is illegal, undo the move and return 0.
     {
+        unmakeMove();
         return 0;
     }
     return 1;
 }
 
-void unmakeMove()
-{
-    // use the saved variables in the undo struct to restore saved game state.
-    memcpy(piece_bitboards, undo_move.piece_bitboards_undo, sizeof(piece_bitboards));
-    memcpy(occupancy_bitboards, undo_move.occupancy_bitboards_undo, sizeof(occupancy_bitboards));
-    memcpy(piece_on_square, undo_move.piece_on_square_undo, sizeof(piece_on_square));
-    castle = undo_move.castle_undo;
-    en_passant = undo_move.en_passant_undo;
-    full_moves = undo_move.full_moves_undo;
-    half_moves = undo_move.half_moves_undo;
-    side = undo_move.side_undo;
-}
-
-int isIllegalMove(move_t move)
+int isIllegalMove(move_t move) // try a move and test for legality
 {
     if (!makeMove(move))
     {
         return 1;
     }
-    int legality = isIllegalPosition();
     unmakeMove();
-    return legality;
+    return 0;
 }
 /******************\
 --------------------
@@ -2021,7 +2032,7 @@ int evaluate()
 {
     int eval = 0;
     eval += pieceScore();
-    // printf("evaluation %d negative evaluation %d\n", eval, -eval);
+    //  printf("evaluation %d negative evaluation %d\n", eval, -eval); //debug line
     return (side == white) ? eval : -eval;
 }
 /******************\
@@ -2030,35 +2041,131 @@ int evaluate()
 --------------------
 \******************/
 
-int negaMax(int depth) // the main search function, based off the negamax algorithm
+/*
+    the main function implementing the search algorithm, based off the negamax algorithm
+    with alpha beta enhancements.
+
+    My understanding of the parameters :
+    alpha : the minimum score that the maximizing player is assured of
+    beta : the maximum score that the minimizing player is assured of
+    depth : the maximum depth of the search tree
+
+    Typically, at the grandmaster level of play, white is the maximizing player playing for the win
+    and black is the minimizing player playing to equalize the position.
+
+    Therefore, lets assume white is the maximizing player in the algorithm and black is the minimizer.
+
+    Alpha is the minimizing score white is assured of, so if we find a better score for white, we must
+    update our minimum score for our maximizing player.
+
+    On the other hand, if we are searching moves for black and find a move that produces a higher score
+    for white (i.e +5 vs +3), we already know the maximum score we can get is +3 as that's better than +5
+    for us as black. So we cutoff the branch and search no further.
+*/
+int negaMax(int alpha, int beta, int depth) // main function described above
 {
     if (depth == 0)
     {
         return evaluate();
     }
-    int return_array[2];
-    int best_score = -INT32_MAX;
-    move_t bestMove;
+    int best_score = -INT_MAX;
 
     moves move_list;
     genMoves(&move_list);
     for (int i = 0; i < move_list.total_count; i++)
     {
 
+        if (!makeMove(move_list.moves[i])) // illegal move, try next move
+        {
+            continue;
+        }
+
+        int score = -negaMax(-beta, -alpha, depth - 1); // recurse
+        unmakeMove();
+        if (score > best_score)
+        {
+            best_score = score;
+            if (score > alpha)
+            { // found better minimum score for maximizing player, update alpha
+                alpha = score;
+            }
+        }
+        if (score >= beta)
+        {
+            return best_score; // score is worse than maximum score minimizing player can get, stop search
+        }
+    }
+    return best_score;
+}
+
+/*
+function which will print the best move so it can be sent through the UCI protocol
+*/
+void searchPos(int depth) // the function which will provide the lichess-bot api with the best string.
+{
+    moves move_list;
+    genMoves(&move_list);
+    int best_score = -INT_MAX;
+    move_t best_move = 0;
+
+    for (int i = 0; i < move_list.total_count; i++)
+    {
         if (!makeMove(move_list.moves[i]))
         {
             continue;
         }
 
-        int score = -negaMax(depth - 1);
+        int score = -negaMax(-INT_MAX, INT_MAX, depth - 1);
         unmakeMove();
+
         if (score > best_score)
         {
             best_score = score;
-            bestMove = move_list.moves[i];
+            best_move = move_list.moves[i];
         }
     }
-    return best_score;
+
+    if (best_move)
+    {
+        int flags = getFlags(best_move);
+        if (flags & 0b1000) // If move is a promotion
+        {
+            char promo_char = 'q'; // Default to queen
+            switch (flags & 0b1111)
+            {
+            case 0b1000:
+            case 0b1100:
+                promo_char = 'n';
+                break;
+            case 0b1001:
+            case 0b1101:
+                promo_char = 'b';
+                break;
+            case 0b1010:
+            case 0b1110:
+                promo_char = 'r';
+                break;
+            case 0b1011:
+            case 0b1111:
+                promo_char = 'q';
+                break;
+            }
+            printf("bestmove %s%s%c\n",
+                   square_to_coords[getSourceSq(best_move)],
+                   square_to_coords[getTargetSq(best_move)],
+                   promo_char);
+        }
+        else
+        {
+            printf("bestmove %s%s\n",
+                   square_to_coords[getSourceSq(best_move)],
+                   square_to_coords[getTargetSq(best_move)]);
+        }
+    }
+    else
+    {
+        printf("bestmove 0000\n");
+    }
 }
 /******************\
 --------------------
@@ -2230,52 +2337,65 @@ This section will define functions used for implementing the UCI protocol.
 move_t parseMove(char *move_string)
 {
     // extract source square and target square from string
+    // printf("move sent : %s\n", move_string);  //debug line
+    // printBoard(); // debug line
     int from = (move_string[0] - 'a') + (8 - (move_string[1] - '0')) * 8;
     int to = (move_string[2] - 'a') + (8 - (move_string[3] - '0')) * 8;
+    // printf("move parsed : %s%s", square_to_coords[from], square_to_coords[to]); //debug line
+
     // initialize movelist and fill it with moves
     moves move_list;
     int flags;
     genMoves(&move_list);
     move_t move;
+    // printf("total move count for move %s : %d\n", move_string, move_list.total_count); //debug line
     for (int i = 0; i < move_list.total_count; i++)
     { // loop through generated moves
         move = move_list.moves[i];
+        // printMoveUCI(move); //debug line
         flags = getFlags(move);
         // check if source and target squares match the move string
         if (getSourceSq(move) == from && getTargetSq(move) == to)
         {
 
+            /* printf("Parsed move: from %s (%d), to %s (%d)\n", //debug lines
+                    square_to_coords[getSourceSq(move)],
+                    getSourceSq(move),
+                    square_to_coords[getTargetSq(move)],
+                    getTargetSq(move));
+                    */
             int promo = getFlags(move);
             if (promo & 0b1000)
             { // promotion is available
-                if ((promo & 0b1000) && (move_string[4] == 'n'))
+                if ((promo == 0b1011 || promo == 0b1111) && (move_string[4] == 'q'))
                 {
                     if (!isIllegalMove(move))
                     {
                         return move;
                     }
                 }
-                if ((promo & 0b1001) && (move_string[4] == 'b'))
+                if ((promo == 0b1000 || promo == 0b1001) && (move_string[4] == 'n'))
                 {
                     if (!isIllegalMove(move))
                     {
                         return move;
                     }
                 }
-                if ((promo & 0b1010) && (move_string[4] == 'r'))
+                if ((promo == 0b1001 || promo == 0b1011) && (move_string[4] == 'b'))
                 {
                     if (!isIllegalMove(move))
                     {
                         return move;
                     }
                 }
-                if ((promo & 0b1011) && (move_string[4] == 'q'))
+                if ((promo == 0b1010 || promo == 0b1110) && (move_string[4] == 'r'))
                 {
                     if (!isIllegalMove(move))
                     {
                         return move;
                     }
                 }
+
                 continue;
             }
 
@@ -2309,15 +2429,13 @@ void parsePosition(char *input)
         while (sscanf(moves_ptr, "%s", move_string) == 1)
         {
             move_t move = parseMove(move_string);
-            if (move == 0)
+            if (!isIllegalMove(move))
             {
-                printf("Illegal move: %s\n", move_string);
-                break;
+                makeMove(move);
             }
-            if (!makeMove(move))
+            else
             {
-                printf("Illegal move: %s\n", move_string);
-                unmakeMove();
+                printf("Illegal move sent by UCI : %s", move_string);
                 break;
             }
             moves_ptr += strlen(move_string) + 1; // move pointer forward to next move
@@ -2325,29 +2443,34 @@ void parsePosition(char *input)
     }
 }
 
-void parseGo() // a function to parse the "go" command sent by GUI to engine
+void parseGo(char *input) // a function to parse the "go" command sent by GUI to engine
 {
+    int depth = 1; // default depth
+    char *depth_ptr = strstr(input, "depth");
+    if (depth_ptr != NULL)
+    {
+        depth_ptr += 6; // move pointer forward to skip "depth" text
+        depth = atoi(depth_ptr);
+    }
+    searchPos(depth);
 }
 
 void uciLoop()
 {
     // reset input and output buffers
     setbuf(stdout, NULL);
-    setbuf(stdin, NULL);
+    // setbuf(stdin, NULL);
     // create buffer for input
     char buffer[2000];
     // send GUI info about engine and "uciok" command to begin UCI communcation
     printf("id name Superjelly\n");
-    printf("id name Busayo Afe\n");
     printf("uciok\n");
+    fflush(stdout);
     while (1)
     {
-        for (int i = 0; i < 2000; i++) // manual memset(), encountered a bug related to it earlier so decided to use for loop for safety
-        {
-            buffer[i] = 0;
-        }
+
         // flush the output stream to ensure output is sent to the GUI
-        fflush(stdout);
+
         // use fgets to get input
         if (!(fgets(buffer, 2000, stdin)))
         {
@@ -2363,19 +2486,40 @@ void uciLoop()
         if (strncmp(buffer, "isready", 7) == 0)
         {
             printf("readyok\n");
+            fflush(stdout);
             continue;
         }
 
+        // handle "quit" cmd by ending loop
         else if (strncmp(buffer, "quit", 4) == 0)
         {
             break;
         }
+        // handle "ucinewgame" command by resetting board to starting position
+        else if (strncmp(buffer, "ucinewgame", 10) == 0)
+        {
+            initFENPosition(starting_postition_fen);
+        }
+        // handle "position" command by setting up position sent by GUI
+        else if (strncmp(buffer, "position", 8) == 0)
+        {
+            parsePosition(buffer);
+            printBoard();
+            fflush(stdout);
+        }
+        // handle "go" command by starting search for best move
+        else if (strncmp(buffer, "go", 2) == 0)
+        {
+            parseGo(buffer);
+        }
+
+        // provide info requested by "uci" command
         else if (strncmp(buffer, "uci", 3) == 0)
         {
 
             printf("id name Superjelly\n");
-            printf("id name Busayo Afe\n");
             printf("uciok\n");
+            fflush(stdout);
         }
     }
 }
@@ -2393,10 +2537,18 @@ int main() // entry point
     int debug = 0;
     if (debug) // run debug code
     {
-        parsePosition("position startpos moves e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 d2d5");
+        // printf("side before code executiton %s", (side == white) ? "white" : "black");
+
+        initFENPosition("rnbqkbnr/ppp1ppp1/7p/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
+        move_t ep = parseMove("e5d6");
+        makeMove(ep);
         printBoard();
+        printBitboard(occupancy_bitboards[white]);
+        printBitboard(occupancy_bitboards[black]);
+        printBitboard(occupancy_bitboards[both]);
     }
     else
     {
+        uciLoop();
     }
 }
