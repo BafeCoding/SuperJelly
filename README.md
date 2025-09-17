@@ -1,4 +1,4 @@
-Superjelly, a chess engine fully developed in and hosted on Lichess using lichess-bot.
+Superjelly, a chess engine developed in C and hosted on Lichess using lichess-bot.
 
 Features include :
   - Bitboard based board representation
