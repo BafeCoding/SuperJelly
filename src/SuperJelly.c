@@ -1557,7 +1557,7 @@ U64 posHash = 0;
 for(board squares)
 {
     if(there is no piece on the square) continue;
-    posHash ^= zobristNums[piece*square]
+    posHash ^= zobristNums[piece * 64 + square]
 
 }
 if(it is black to play) then posHash ^= zobristNums[768]
